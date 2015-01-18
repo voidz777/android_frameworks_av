@@ -1495,17 +1495,20 @@ status_t ACodec::configureCodec(
 #endif
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
-        int32_t numChannels, sampleRate;
+        int32_t numChannels, sampleRate, bitsPerSample;
+
         if (!msg->findInt32("channel-count", &numChannels)
                 || !msg->findInt32("sample-rate", &sampleRate)) {
             // Since we did not always check for these, leave them optional
             // and have the decoder figure it all out.
             err = OK;
         } else {
+            int32_t bitsPerSample = 16;
+            msg->findInt32("bits-per-sample", &bitsPerSample);
             err = setupRawAudioFormat(
                     encoder ? kPortIndexInput : kPortIndexOutput,
                     sampleRate,
-                    numChannels);
+                    numChannels, bitsPerSample);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         int32_t numChannels, sampleRate;
@@ -1601,8 +1604,10 @@ status_t ACodec::configureCodec(
                     compressionLevel = 8;
                 }
             }
+            int32_t bitsPerSample = 16;
+            msg->findInt32("bits-per-sample", &bitsPerSample);
             err = setupFlacCodec(
-                    encoder, numChannels, sampleRate, compressionLevel);
+                    encoder, numChannels, sampleRate, compressionLevel, bitsPerSample);
         }
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         int32_t numChannels, sampleRate;
@@ -1622,14 +1627,16 @@ status_t ACodec::configureCodec(
                 || !msg->findInt32("sample-rate", &sampleRate)) {
             err = INVALID_OPERATION;
         } else {
-            err = setupAC3Codec(encoder, numChannels, sampleRate);
+            int32_t bitsPerSample = 16;
+            msg->findInt32("bits-per-sample", &bitsPerSample);
+            err = setupAC3Codec(encoder, numChannels, sampleRate, bitsPerSample);
         }
     } else {
         if (encoder) {
             int32_t numChannels, sampleRate;
             if (msg->findInt32("channel-count", &numChannels)
                   && msg->findInt32("sample-rate", &sampleRate)) {
-                setupRawAudioFormat(kPortIndexInput, sampleRate, numChannels);
+                setupRawAudioFormat(kPortIndexInput, sampleRate, numChannels, 16);
             }
         }
 #ifdef ENABLE_AV_ENHANCEMENTS
@@ -1755,7 +1762,7 @@ status_t ACodec::setupAACCodec(
     status_t err = setupRawAudioFormat(
             encoder ? kPortIndexInput : kPortIndexOutput,
             sampleRate,
-            numChannels);
+            numChannels, 16);
 
     if (err != OK) {
         return err;
@@ -1891,9 +1898,9 @@ status_t ACodec::setupAACCodec(
 }
 
 status_t ACodec::setupAC3Codec(
-        bool encoder, int32_t numChannels, int32_t sampleRate) {
+        bool encoder, int32_t numChannels, int32_t sampleRate, int32_t bitsPerSample) {
     status_t err = setupRawAudioFormat(
-            encoder ? kPortIndexInput : kPortIndexOutput, sampleRate, numChannels);
+            encoder ? kPortIndexInput : kPortIndexOutput, sampleRate, numChannels, bitsPerSample);
 
     if (err != OK) {
         return err;
@@ -1998,18 +2005,19 @@ status_t ACodec::setupAMRCodec(bool encoder, bool isWAMR, int32_t bitrate) {
     return setupRawAudioFormat(
             encoder ? kPortIndexInput : kPortIndexOutput,
             isWAMR ? 16000 : 8000 /* sampleRate */,
-            1 /* numChannels */);
+            1 /* numChannels */, 16);
 }
 
 status_t ACodec::setupG711Codec(bool encoder, int32_t numChannels) {
     CHECK(!encoder);  // XXX TODO
 
     return setupRawAudioFormat(
-            kPortIndexInput, 8000 /* sampleRate */, numChannels);
+            kPortIndexInput, 8000 /* sampleRate */, numChannels, 16);
 }
 
 status_t ACodec::setupFlacCodec(
-        bool encoder, int32_t numChannels, int32_t sampleRate, int32_t compressionLevel) {
+        bool encoder, int32_t numChannels, int32_t sampleRate, int32_t compressionLevel,
+        int32_t bitsPerSample) {
 
     if (encoder) {
         OMX_AUDIO_PARAM_FLACTYPE def;
@@ -2033,7 +2041,7 @@ status_t ACodec::setupFlacCodec(
     return setupRawAudioFormat(
             encoder ? kPortIndexInput : kPortIndexOutput,
             sampleRate,
-            numChannels);
+            numChannels, bitsPerSample);
 }
 
 status_t ACodec::setupRawAudioFormat(
@@ -2042,6 +2050,7 @@ status_t ACodec::setupRawAudioFormat(
     InitOMXParams(&def);
     def.nPortIndex = portIndex;
 
+    ALOGI("sampleRate=%d channels=%d bits=%d", sampleRate, numChannels, bitsPerSample);
     status_t err = mOMX->getParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
 
