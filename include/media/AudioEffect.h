@@ -36,7 +36,7 @@ namespace android {
 
 // ----------------------------------------------------------------------------
 
-struct effect_param_cblk_t;
+class effect_param_cblk_t;
 
 // ----------------------------------------------------------------------------
 
@@ -217,9 +217,8 @@ public:
      *      higher priorities, 0 being the normal priority.
      * cbf:         optional callback function (see effect_callback_t)
      * user:        pointer to context for use by the callback receiver.
-     * sessionID:   audio session this effect is associated to.
-     *      If equal to AUDIO_SESSION_OUTPUT_MIX, the effect will be global to
-     *      the output mix.  Otherwise, the effect will be applied to all players
+     * sessionID:   audio session this effect is associated to. If 0, the effect will be global to
+     *      the output mix. If not 0, the effect will be applied to all players
      *      (AudioTrack or MediaPLayer) within the same audio session.
      * io:  HAL audio output or input stream to which this effect must be attached. Leave at 0 for
      *      automatic output selection by AudioFlinger.
@@ -230,8 +229,8 @@ public:
                   int32_t priority = 0,
                   effect_callback_t cbf = NULL,
                   void* user = NULL,
-                  int sessionId = AUDIO_SESSION_OUTPUT_MIX,
-                  audio_io_handle_t io = AUDIO_IO_HANDLE_NONE
+                  int sessionId = 0,
+                  audio_io_handle_t io = 0
                   );
 
     /* Constructor.
@@ -242,8 +241,8 @@ public:
                     int32_t priority = 0,
                     effect_callback_t cbf = NULL,
                     void* user = NULL,
-                    int sessionId = AUDIO_SESSION_OUTPUT_MIX,
-                    audio_io_handle_t io = AUDIO_IO_HANDLE_NONE
+                    int sessionId = 0,
+                    audio_io_handle_t io = 0
                     );
 
     /* Terminates the AudioEffect and unregisters it from AudioFlinger.
@@ -264,8 +263,8 @@ public:
                             int32_t priority = 0,
                             effect_callback_t cbf = NULL,
                             void* user = NULL,
-                            int sessionId = AUDIO_SESSION_OUTPUT_MIX,
-                            audio_io_handle_t io = AUDIO_IO_HANDLE_NONE
+                            int sessionId = 0,
+                            audio_io_handle_t io = 0
                             );
 
     /* Result of constructing the AudioEffect. This must be checked
@@ -449,7 +448,6 @@ private:
     sp<EffectClient>        mIEffectClient;     // IEffectClient implementation
     sp<IMemory>             mCblkMemory;        // shared memory for deferred parameter setting
     effect_param_cblk_t*    mCblk;              // control block for deferred parameter setting
-    pid_t                   mClientPid;
 };
 
 

@@ -23,8 +23,6 @@
 #include <media/ICrypto.h>
 #include <media/IDrm.h>
 #include <media/IHDCP.h>
-#include <media/IMediaCodecList.h>
-#include <media/IMediaHTTPService.h>
 #include <media/IMediaPlayerService.h>
 #include <media/IMediaRecorder.h>
 #include <media/IOMX.h>
@@ -50,7 +48,7 @@ enum {
     ADD_BATTERY_DATA,
     PULL_BATTERY_DATA,
     LISTEN_FOR_REMOTE_DISPLAY,
-    GET_CODEC_LIST,
+    UPDATE_PROXY_CONFIG,
 };
 
 class BpMediaPlayerService: public BpInterface<IMediaPlayerService>
@@ -88,21 +86,12 @@ public:
         return interface_cast<IMediaRecorder>(reply.readStrongBinder());
     }
 
-    virtual status_t decode(
-            const sp<IMediaHTTPService> &httpService,
-            const char* url,
-            uint32_t *pSampleRate,
-            int* pNumChannels,
-            audio_format_t* pFormat,
-            const sp<IMemoryHeap>& heap,
-            size_t *pSize)
+    virtual status_t decode(const char* url, uint32_t *pSampleRate, int* pNumChannels,
+                               audio_format_t* pFormat,
+                               const sp<IMemoryHeap>& heap, size_t *pSize)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IMediaPlayerService::getInterfaceDescriptor());
-        data.writeInt32(httpService != NULL);
-        if (httpService != NULL) {
-            data.writeStrongBinder(httpService->asBinder());
-        }
         data.writeCString(url);
         data.writeStrongBinder(heap->asBinder());
         status_t status = remote()->transact(DECODE_URL, data, &reply);
@@ -194,11 +183,23 @@ public:
         return interface_cast<IRemoteDisplay>(reply.readStrongBinder());
     }
 
-    virtual sp<IMediaCodecList> getCodecList() const {
+    virtual status_t updateProxyConfig(
+            const char *host, int32_t port, const char *exclusionList) {
         Parcel data, reply;
+
         data.writeInterfaceToken(IMediaPlayerService::getInterfaceDescriptor());
-        remote()->transact(GET_CODEC_LIST, data, &reply);
-        return interface_cast<IMediaCodecList>(reply.readStrongBinder());
+        if (host == NULL) {
+            data.writeInt32(0);
+        } else {
+            data.writeInt32(1);
+            data.writeCString(host);
+            data.writeInt32(port);
+            data.writeCString(exclusionList);
+        }
+
+        remote()->transact(UPDATE_PROXY_CONFIG, data, &reply);
+
+        return reply.readInt32();
     }
 };
 
@@ -221,25 +222,13 @@ status_t BnMediaPlayerService::onTransact(
         } break;
         case DECODE_URL: {
             CHECK_INTERFACE(IMediaPlayerService, data, reply);
-            sp<IMediaHTTPService> httpService;
-            if (data.readInt32()) {
-                httpService =
-                    interface_cast<IMediaHTTPService>(data.readStrongBinder());
-            }
             const char* url = data.readCString();
             sp<IMemoryHeap> heap = interface_cast<IMemoryHeap>(data.readStrongBinder());
             uint32_t sampleRate;
             int numChannels;
             audio_format_t format;
             size_t size;
-            status_t status =
-                decode(httpService,
-                       url,
-                       &sampleRate,
-                       &numChannels,
-                       &format,
-                       heap,
-                       &size);
+            status_t status = decode(url, &sampleRate, &numChannels, &format, heap, &size);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
                 reply->writeInt32(sampleRate);
@@ -327,12 +316,24 @@ status_t BnMediaPlayerService::onTransact(
             reply->writeStrongBinder(display->asBinder());
             return NO_ERROR;
         } break;
-        case GET_CODEC_LIST: {
+        case UPDATE_PROXY_CONFIG:
+        {
             CHECK_INTERFACE(IMediaPlayerService, data, reply);
-            sp<IMediaCodecList> mcl = getCodecList();
-            reply->writeStrongBinder(mcl->asBinder());
-            return NO_ERROR;
-        } break;
+
+            const char *host = NULL;
+            int32_t port = 0;
+            const char *exclusionList = NULL;
+
+            if (data.readInt32()) {
+                host = data.readCString();
+                port = data.readInt32();
+                exclusionList = data.readCString();
+            }
+
+            reply->writeInt32(updateProxyConfig(host, port, exclusionList));
+
+            return OK;
+        }
         default:
             return BBinder::onTransact(code, data, reply, flags);
     }

@@ -61,15 +61,14 @@ status_t MediaPlayerFactory::registerFactory_l(IFactory* factory,
     return OK;
 }
 
-static player_type getDefaultPlayerType() {
+player_type MediaPlayerFactory::getDefaultPlayerType() {
     char value[PROPERTY_VALUE_MAX];
-    // TODO: remove this EXPERIMENTAL developer settings property
-    if (property_get("persist.sys.media.use-awesome", value, NULL)
-            && !strcasecmp("true", value)) {
-        return STAGEFRIGHT_PLAYER;
+    if (property_get("media.stagefright.use-nuplayer", value, NULL)
+            && (!strcmp("1", value) || !strcasecmp("true", value))) {
+        return NU_PLAYER;
     }
 
-    return NU_PLAYER;
+    return STAGEFRIGHT_PLAYER;
 }
 
 status_t MediaPlayerFactory::registerFactory(IFactory* factory,
@@ -172,24 +171,24 @@ sp<MediaPlayerBase> MediaPlayerFactory::createPlayer(
 class StagefrightPlayerFactory :
     public MediaPlayerFactory::IFactory {
   public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                int fd,
                                int64_t offset,
-                               int64_t /*length*/,
-                               float /*curScore*/) {
-        if (getDefaultPlayerType()
-                == STAGEFRIGHT_PLAYER) {
+                               int64_t length,
+                               float curScore) {
+        union {
             char buf[20];
-            lseek(fd, offset, SEEK_SET);
-            read(fd, buf, sizeof(buf));
-            lseek(fd, offset, SEEK_SET);
+            long bufl[20/sizeof(long)];
+        };
+        lseek(fd, offset, SEEK_SET);
+        read(fd, buf, sizeof(buf));
+        lseek(fd, offset, SEEK_SET);
 
-            uint32_t ident = *((uint32_t*)buf);
+        const long ident = bufl[0];
 
-            // Ogg vorbis?
-            if (ident == 0x5367674f) // 'OggS'
-                return 1.0;
-        }
+        // Ogg vorbis?
+        if (ident == 0x5367674f) // 'OggS'
+            return 1.0;
 
         return 0.0;
     }
@@ -202,7 +201,7 @@ class StagefrightPlayerFactory :
 
 class NuPlayerFactory : public MediaPlayerFactory::IFactory {
   public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                const char* url,
                                float curScore) {
         static const float kOurScore = 0.8;
@@ -231,17 +230,12 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
             return kOurScore;
         }
 
-        if (!strncasecmp("http://", url, 7)
-                || !strncasecmp("https://", url, 8)) {
-            return kOurScore;
-        }
-
         return 0.0;
     }
 
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
-                               const sp<IStreamSource>& /*source*/,
-                               float /*curScore*/) {
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
+                               const sp<IStreamSource> &source,
+                               float curScore) {
         return 1.0;
     }
 
@@ -253,7 +247,7 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
 
 class SonivoxPlayerFactory : public MediaPlayerFactory::IFactory {
   public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                const char* url,
                                float curScore) {
         static const float kOurScore = 0.4;
@@ -284,7 +278,7 @@ class SonivoxPlayerFactory : public MediaPlayerFactory::IFactory {
         return 0.0;
     }
 
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                int fd,
                                int64_t offset,
                                int64_t length,
@@ -322,9 +316,9 @@ class SonivoxPlayerFactory : public MediaPlayerFactory::IFactory {
 
 class TestPlayerFactory : public MediaPlayerFactory::IFactory {
   public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                const char* url,
-                               float /*curScore*/) {
+                               float curScore) {
         if (TestPlayerStub::canBeUsed(url)) {
             return 1.0;
         }

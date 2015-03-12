@@ -39,7 +39,9 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
 
+#ifdef QCOM_HARDWARE
 #include "include/ExtendedUtils.h"
+#endif
 
 namespace android {
 
@@ -149,7 +151,9 @@ retry:
 
     if (ret != NULL) {
 
-        if (!secondPass && ( ret->countTracks() == 0 ||
+        if (!(!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4) &&
+                (source->flags() & DataSource::kIsCachingDataSource)) &&
+                    !isDrm && !secondPass && ( ret->countTracks() == 0 ||
                     (!strncasecmp("video/", mime, 6) && ret->countTracks() < 2) ) ) {
             secondPass = true;
             goto retry;

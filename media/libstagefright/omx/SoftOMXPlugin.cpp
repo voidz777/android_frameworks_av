@@ -34,7 +34,7 @@ static const struct {
     const char *mRole;
 
 } kComponents[] = {
-    { "OMX.ffmpeg.mpeg2.decoder", "ffmpegvdec", "video_decoder.mpeg2" },
+    { "OMX.ffmpeg.mpeg2v.decoder", "ffmpegvdec", "video_decoder.mpeg2v" },
     { "OMX.ffmpeg.h263.decoder", "ffmpegvdec", "video_decoder.h263" },
     { "OMX.ffmpeg.mpeg4.decoder", "ffmpegvdec", "video_decoder.mpeg4" },
     { "OMX.ffmpeg.wmv.decoder", "ffmpegvdec", "video_decoder.wmv" },
@@ -65,7 +65,6 @@ static const struct {
     { "OMX.google.amrwb.encoder", "amrwbenc", "audio_encoder.amrwb" },
     { "OMX.google.h264.decoder", "h264dec", "video_decoder.avc" },
     { "OMX.google.h264.encoder", "h264enc", "video_encoder.avc" },
-    { "OMX.google.hevc.decoder", "hevcdec", "video_decoder.hevc" },
     { "OMX.google.g711.alaw.decoder", "g711dec", "audio_decoder.g711alaw" },
     { "OMX.google.g711.mlaw.decoder", "g711dec", "audio_decoder.g711mlaw" },
     { "OMX.google.h263.decoder", "mpeg4dec", "video_decoder.h263" },
@@ -74,7 +73,6 @@ static const struct {
     { "OMX.google.mpeg4.encoder", "mpeg4enc", "video_encoder.mpeg4" },
     { "OMX.google.mp3.decoder", "mp3dec", "audio_decoder.mp3" },
     { "OMX.google.vorbis.decoder", "vorbisdec", "audio_decoder.vorbis" },
-    { "OMX.google.opus.decoder", "opusdec", "audio_decoder.opus" },
     { "OMX.google.vp8.decoder", "vpxdec", "video_decoder.vp8" },
     { "OMX.google.vp9.decoder", "vpxdec", "video_decoder.vp9" },
     { "OMX.google.vp8.encoder", "vpxenc", "video_encoder.vp8" },
@@ -183,7 +181,7 @@ OMX_ERRORTYPE SoftOMXPlugin::destroyComponentInstance(
 
 OMX_ERRORTYPE SoftOMXPlugin::enumerateComponents(
         OMX_STRING name,
-        size_t /* size */,
+        size_t size,
         OMX_U32 index) {
     if (index >= kNumComponents) {
         return OMX_ErrorNoMore;

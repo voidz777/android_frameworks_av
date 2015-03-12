@@ -54,14 +54,14 @@ public:
             data.writeInt32(stream);
         } else if (event != AudioSystem::OUTPUT_CLOSED && event != AudioSystem::INPUT_CLOSED
 #ifdef QCOM_DIRECTTRACK
-                   && event != AudioSystem::EFFECT_CONFIG_CHANGED
+                && event != AudioSystem::EFFECT_CONFIG_CHANGED
 #endif
-            ) {
+        ) {
             const AudioSystem::OutputDescriptor *desc = (const AudioSystem::OutputDescriptor *)param2;
             data.writeInt32(desc->samplingRate);
             data.writeInt32(desc->format);
             data.writeInt32(desc->channelMask);
-            data.writeInt64(desc->frameCount);
+            data.writeInt32(desc->frameCount);
             data.writeInt32(desc->latency);
         }
         remote()->transact(IO_CONFIG_CHANGED, data, &reply, IBinder::FLAG_ONEWAY);
@@ -91,7 +91,7 @@ status_t BnAudioFlingerClient::onTransact(
                 desc.samplingRate = data.readInt32();
                 desc.format = (audio_format_t) data.readInt32();
                 desc.channelMask = (audio_channel_mask_t) data.readInt32();
-                desc.frameCount = data.readInt64();
+                desc.frameCount = data.readInt32();
                 desc.latency = data.readInt32();
                 param2 = &desc;
             }

@@ -37,15 +37,16 @@ AudioStreamOutSink::~AudioStreamOutSink()
 ssize_t AudioStreamOutSink::negotiate(const NBAIO_Format offers[], size_t numOffers,
                                       NBAIO_Format counterOffers[], size_t& numCounterOffers)
 {
-    if (!Format_isValid(mFormat)) {
+    if (mFormat == Format_Invalid) {
         mStreamBufferSizeBytes = mStream->common.get_buffer_size(&mStream->common);
         audio_format_t streamFormat = mStream->common.get_format(&mStream->common);
-        uint32_t sampleRate = mStream->common.get_sample_rate(&mStream->common);
-        audio_channel_mask_t channelMask =
-                (audio_channel_mask_t) mStream->common.get_channels(&mStream->common);
-        mFormat = Format_from_SR_C(sampleRate,
-                audio_channel_count_from_out_mask(channelMask), streamFormat);
-        mFrameSize = Format_frameSize(mFormat);
+        if (streamFormat == AUDIO_FORMAT_PCM_16_BIT) {
+            uint32_t sampleRate = mStream->common.get_sample_rate(&mStream->common);
+            audio_channel_mask_t channelMask =
+                    (audio_channel_mask_t) mStream->common.get_channels(&mStream->common);
+            mFormat = Format_from_SR_C(sampleRate, popcount(channelMask));
+            mBitShift = Format_frameBitShift(mFormat);
+        }
     }
     return NBAIO_Sink::negotiate(offers, numOffers, counterOffers, numCounterOffers);
 }
@@ -55,10 +56,10 @@ ssize_t AudioStreamOutSink::write(const void *buffer, size_t count)
     if (!mNegotiated) {
         return NEGOTIATE;
     }
-    ALOG_ASSERT(Format_isValid(mFormat));
-    ssize_t ret = mStream->write(mStream, buffer, count * mFrameSize);
+    ALOG_ASSERT(mFormat != Format_Invalid);
+    ssize_t ret = mStream->write(mStream, buffer, count << mBitShift);
     if (ret > 0) {
-        ret /= mFrameSize;
+        ret >>= mBitShift;
         mFramesWritten += ret;
     } else {
         // FIXME verify HAL implementations are returning the correct error codes e.g. WOULD_BLOCK
@@ -71,11 +72,14 @@ status_t AudioStreamOutSink::getNextWriteTimestamp(int64_t *timestamp) {
 
     if (NULL == mStream)
         return INVALID_OPERATION;
-
+#ifndef ICS_AUDIO_BLOB
     if (NULL == mStream->get_next_write_timestamp)
         return INVALID_OPERATION;
 
     return mStream->get_next_write_timestamp(mStream, timestamp);
+#else
+    return INVALID_OPERATION;
+#endif
 }
 
 #ifndef HAVE_PRE_KITKAT_AUDIO_BLOB

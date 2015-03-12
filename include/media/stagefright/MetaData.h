@@ -51,21 +51,17 @@ enum {
     kKeyChannelCount      = '#chn',  // int32_t
     kKeyChannelMask       = 'chnm',  // int32_t
     kKeySampleRate        = 'srte',  // int32_t (audio sampling rate Hz)
+    kKeyExtSampleRate     = 'exsr',  // int32_t (extenstion audio sampling rate Hz)
     kKeyFrameRate         = 'frmR',  // int32_t (video frame rate fps)
     kKeyBitRate           = 'brte',  // int32_t (bps)
     kKeyCodecId           = 'cdid',  // int32_t
-    kKeyBitsPerSample     = 'sbit',  // int32_t (DUPE of kKeySampleBits)
     kKeySampleFormat      = 'sfmt',  // int32_t
     kKeyESDS              = 'esds',  // raw data
     kKeyAACProfile        = 'aacp',  // int32_t
     kKeyAVCC              = 'avcc',  // raw data
-    kKeyHVCC              = 'hvcc',  // raw data
     kKeyD263              = 'd263',  // raw data
     kKeyVorbisInfo        = 'vinf',  // raw data
     kKeyVorbisBooks       = 'vboo',  // raw data
-    kKeyOpusHeader        = 'ohdr',  // raw data
-    kKeyOpusCodecDelay    = 'ocod',  // uint64_t (codec delay in ns)
-    kKeyOpusSeekPreRoll   = 'ospr',  // uint64_t (seek preroll in ns)
     kKeyWantsNALFragments = 'NALf',
     kKeyIsSyncFrame       = 'sync',  // int32_t (bool)
     kKeyIsCodecConfig     = 'conf',  // int32_t (bool)
@@ -131,7 +127,6 @@ enum {
     kKeyValidSamples      = 'valD',  // int32_t
 
     kKeyIsUnreadable      = 'unre',  // bool (int32_t)
-
     kKeyRawCodecSpecificData = 'rcsd',  // raw data - added to support mmParser
     kKeyDivXVersion       = 'DivX',  // int32_t
     kKeyDivXDrm           = 'QDrm',  // void *
@@ -144,7 +139,6 @@ enum {
     kKeyWMABitspersample  = 'bsps',  // int64_t
     kKeyWMAVirPktSize     = 'vpks',  // int64_t
     kKeyWMVProfile        = 'wmvp',  // int32_t
-
     kKeyWMVVersion        = 'wmvv',  // int32_t
     kKeyRVVersion         = '#rvv',  // int32_t
     kKeyBlockAlign        = 'blk',   // int32_t , should be different from kKeyWMABlockAlign
@@ -189,24 +183,16 @@ enum {
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
-
-    // Please see MediaFormat.KEY_IS_AUTOSELECT.
-    kKeyTrackIsAutoselect = 'auto', // bool (int32_t)
-    // Please see MediaFormat.KEY_IS_DEFAULT.
-    kKeyTrackIsDefault    = 'dflt', // bool (int32_t)
-    // Similar to MediaFormat.KEY_IS_FORCED_SUBTITLE but pertains to av tracks as well.
-    kKeyTrackIsForced     = 'frcd', // bool (int32_t)
-
+#ifdef QCOM_HARDWARE
     kKeyTunnelException   = 'Ntnl', // not tunnel
-    // Indicate if it is OK to hold on to the MediaBuffer and not
-    // release it immediately
-    kKeyCanDeferRelease   = 'drel', // bool (int32_t)
+#endif
+
+    kKeySampleBits        = 'sbit', // int32_t (audio sample bit-width)
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
-    kTypeHVCC        = 'hvcc',
     kTypeD263        = 'd263',
 };
 
@@ -280,8 +266,6 @@ public:
 
     bool findData(uint32_t key, uint32_t *type,
                   const void **data, size_t *size) const;
-
-    bool hasData(uint32_t key) const;
 
     void dumpToLog() const;
 

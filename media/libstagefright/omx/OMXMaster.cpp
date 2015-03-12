@@ -45,6 +45,9 @@ OMXMaster::~OMXMaster() {
 
 void OMXMaster::addVendorPlugin() {
     addPlugin("libstagefrighthw.so");
+#ifdef SAMSUNG_OMX
+    addPlugin("libsomxcore.so");
+#endif
 }
 
 void OMXMaster::addPlugin(const char *libname) {
@@ -94,7 +97,7 @@ void OMXMaster::addPlugin(OMXPluginBase *plugin) {
     }
 
     if (err != OMX_ErrorNoMore) {
-        ALOGE("OMX plugin failed w/ error 0x%08x after registering %zu "
+        ALOGE("OMX plugin failed w/ error 0x%08x after registering %d "
              "components", err, mPluginByComponentName.size());
     }
 }

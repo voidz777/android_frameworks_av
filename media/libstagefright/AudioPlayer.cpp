@@ -16,8 +16,6 @@
  * limitations under the License.
  */
 
-#include <inttypes.h>
-
 //#define LOG_NDEBUG 0
 #define LOG_TAG "AudioPlayer"
 #define ATRACE_TAG ATRACE_TAG_AUDIO
@@ -27,7 +25,6 @@
 
 #include <binder/IPCThreadState.h>
 #include <media/AudioTrack.h>
-#include <media/openmax/OMX_Audio.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/AudioPlayer.h>
@@ -36,13 +33,19 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+
+#ifdef QCOM_HARDWARE
 #include <media/stagefright/ExtendedCodec.h>
+#endif
+
+#ifdef ENABLE_AV_ENHANCEMENTS
+#include <QCMetaData.h>
+#endif
 
 #include "include/AwesomePlayer.h"
 
 #ifdef ENABLE_AV_ENHANCEMENTS
 #include "QCMetaData.h"
-#include "QCMediaDefs.h"
 #endif
 
 namespace android {
@@ -74,8 +77,8 @@ AudioPlayer::AudioPlayer(
       mPlaying(false),
       mStartPosUs(0),
       mCreateFlags(flags),
-      mPauseRequired(false),
-      mUseSmallBufs(false) {
+      mPauseRequired(false)
+      {
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -102,7 +105,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             return err;
         }
     }
-    ALOGI("start of Playback, useOffload %d",useOffload());
+    ALOGD("start of Playback, useOffload %d",useOffload());
 
     // We allow an optional INFO_FORMAT_CHANGED at the very beginning
     // of playback, if there is one, getFormat below will retrieve the
@@ -172,34 +175,28 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
         ALOGV("channel mask is zero,update from channel count %d", channelMask);
     }
 
-    int32_t bitWidth = 16;
-    format->findInt32(kKeyBitsPerSample, &bitWidth);
+    audio_format_t audioFormat = AUDIO_FORMAT_PCM_16_BIT;
 
-    audio_format_t audioFormat = bitWidth > 16 ? AUDIO_FORMAT_PCM_32_BIT : AUDIO_FORMAT_PCM_16_BIT;
+    int32_t bitWidth = 16;
+#if defined(ENABLE_AV_ENHANCEMENTS) || defined(ENABLE_OFFLOAD_ENHANCEMENTS)
+    format->findInt32(kKeySampleBits, &bitWidth);
+#endif
 
     if (useOffload()) {
         if (mapMimeToAudioFormat(audioFormat, mime) != OK) {
-            ALOGE("%s Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format",
-                  __func__, mime);
+            ALOGE("Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format", mime);
             audioFormat = AUDIO_FORMAT_INVALID;
-        } else {
-#ifdef ENABLE_AV_ENHANCEMENTS
-            if (audio_is_linear_pcm(audioFormat)) {
-                // Override audio format for PCM offload
-                if (bitWidth > 16)
-                    audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
-                else
-                    audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
+        } else if (audio_is_linear_pcm(audioFormat) || audio_is_offload_pcm(audioFormat)) {
+#if defined(QCOM_HARDWARE) || defined(ENABLE_OFFLOAD_ENHANCEMENTS)
+            // Override audio format for PCM offload
+            if (bitWidth >= 24) {
+                ALOGD("24-bit PCM offload enabled format=%d", audioFormat);
+                audioFormat = AUDIO_FORMAT_PCM_24_BIT_OFFLOAD;
+            } else {
+                audioFormat = AUDIO_FORMAT_PCM_16_BIT_OFFLOAD;
             }
 #endif
-            ALOGV("%s Mime type \"%s\" mapped to audio_format 0x%x",
-                  __func__, mime, audioFormat);
-        }
-
-        int32_t aacaot = -1;
-        if ((audioFormat == AUDIO_FORMAT_AAC) && format->findInt32(kKeyAACAOT, &aacaot)) {
-            // Redefine AAC format corrosponding to aac profile
-            mapAACProfileToAudioFormat(audioFormat,(OMX_AUDIO_AACPROFILETYPE) aacaot);
+            ALOGV("Mime type \"%s\" mapped to audio_format 0x%x", mime, audioFormat);
         }
     }
 
@@ -224,7 +221,6 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
                 offloadInfo.duration_us = -1;
             }
 
-            offloadInfo.bit_width = bitWidth;
             offloadInfo.sample_rate = mSampleRate;
             offloadInfo.channel_mask = channelMask;
             offloadInfo.format = audioFormat;
@@ -232,10 +228,9 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
             offloadInfo.bit_rate = avgBitRate;
             offloadInfo.has_video = ((mCreateFlags & HAS_VIDEO) != 0);
             offloadInfo.is_streaming = ((mCreateFlags & IS_STREAMING) != 0);
-            mUseSmallBufs = (audioFormat == AUDIO_FORMAT_PCM_16_BIT_OFFLOAD);
-            offloadInfo.use_small_bufs = mUseSmallBufs;
-        } else {
-            mUseSmallBufs = false;
+#if defined(ENABLE_AV_ENHANCEMENTS) || defined(ENABLE_OFFLOAD_ENHANCEMENTS)
+            offloadInfo.bit_width = bitWidth >= 24 ? 24 : bitWidth;
+#endif
         }
 
         status_t err = mAudioSink->open(
@@ -288,8 +283,7 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
 
         mAudioTrack = new AudioTrack(
                 AUDIO_STREAM_MUSIC, mSampleRate, AUDIO_FORMAT_PCM_16_BIT, audioMask,
-                0 /*frameCount*/, AUDIO_OUTPUT_FLAG_NONE, &AudioCallback, this,
-                0 /*notificationFrames*/);
+                0, AUDIO_OUTPUT_FLAG_NONE, &AudioCallback, this, 0);
 
         if ((err = mAudioTrack->initCheck()) != OK) {
             mAudioTrack.clear();
@@ -319,7 +313,12 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
     if (!(format->findCString(kKeyDecoderComponent, &componentName))) {
           componentName = "none";
     }
-    mPauseRequired = ExtendedCodec::isSourcePauseRequired(componentName);
+    if (!strncmp(componentName, "OMX.qcom.", 9)) {
+        mPauseRequired = true;
+    } else {
+        mPauseRequired = false;
+    }
+
     return OK;
 }
 
@@ -357,7 +356,7 @@ void AudioPlayer::pause(bool playPendingSamples) {
 status_t AudioPlayer::resume() {
     CHECK(mStarted);
     CHECK(mSource != NULL);
-    ALOGI("Resume Playback at %lld",getMediaTimeUs());
+    ALOGD("Resume Playback at %lld",getMediaTimeUs());
     if (mSourcePaused == true) {
         mSourcePaused = false;
         mSource->start();
@@ -380,7 +379,7 @@ status_t AudioPlayer::resume() {
 void AudioPlayer::reset() {
     CHECK(mStarted);
 
-    ALOGI("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
+    ALOGD("reset: mPlaying=%d mReachedEOS=%d useOffload=%d",
                                 mPlaying, mReachedEOS, useOffload() );
 
     if (mAudioSink.get() != NULL) {
@@ -423,6 +422,7 @@ void AudioPlayer::reset() {
         mInputBuffer->release();
         mInputBuffer = NULL;
     }
+
     mSourcePaused = false;
     mSource->stop();
 
@@ -502,7 +502,7 @@ status_t AudioPlayer::setPlaybackRatePermille(int32_t ratePermille) {
 
 // static
 size_t AudioPlayer::AudioSinkCallback(
-        MediaPlayerBase::AudioSink * /* audioSink */,
+        MediaPlayerBase::AudioSink *audioSink,
         void *buffer, size_t size, void *cookie,
         MediaPlayerBase::AudioSink::cb_event_t event) {
     AudioPlayer *me = (AudioPlayer *)cookie;
@@ -627,10 +627,22 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 
                 mIsFirstBuffer = false;
             } else {
-                err = mSource->read(&mInputBuffer, &options);
-                if (err == OK && mInputBuffer == NULL && mSourcePaused) {
-                    ALOGV("mSourcePaused, return 0 from fillBuffer");
-                    return 0;
+                if(!mSourcePaused) {
+                    err = mSource->read(&mInputBuffer, &options);
+                    if (err == OK && mInputBuffer == NULL && mSourcePaused) {
+                        ALOGV("mSourcePaused, return 0 from fillBuffer");
+                        return 0;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if(err == -EAGAIN) {
+                if(mSourcePaused){
+                    break;
+                } else {
+                    continue;
                 }
             }
 
@@ -686,12 +698,12 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                             int64_t timeToCompletionUs =
                                 (1000000ll * numFramesPendingPlayout) / mSampleRate;
 
-                            ALOGV("total number of frames played: %" PRId64 " (%lld us)",
+                            ALOGV("total number of frames played: %lld (%lld us)",
                                     (mNumFramesPlayed + numAdditionalFrames),
                                     1000000ll * (mNumFramesPlayed + numAdditionalFrames)
                                         / mSampleRate);
 
-                            ALOGV("%d frames left to play, %" PRId64 " us (%.2f secs)",
+                            ALOGV("%d frames left to play, %lld us (%.2f secs)",
                                  numFramesPendingPlayout,
                                  timeToCompletionUs, timeToCompletionUs / 1E6);
 
@@ -731,11 +743,8 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                         mObserver->postAudioSeekComplete();
                         postSeekComplete = false;
                     }
-                    if(mPositionTimeMediaUs >= 0 ) {
-                        mStartPosUs = mPositionTimeMediaUs;
-                    } else {
-                        ALOGI("Ignore mStartPos update when timestamp returned is negative");
-                    }
+
+                    mStartPosUs = mPositionTimeMediaUs;
                     ALOGV("adjust seek time to: %.2f", mStartPosUs/ 1E6);
                 }
                 // clear seek time with mLock locked and once we have valid mPositionTimeMediaUs
@@ -751,7 +760,7 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
                 mPositionTimeRealUs =
                     ((mNumFramesPlayed + size_done / mFrameSize) * 1000000)
                         / mSampleRate;
-                ALOGV("buffer->size() = %zu, "
+                ALOGV("buffer->size() = %d, "
                      "mPositionTimeMediaUs=%.2f mPositionTimeRealUs=%.2f",
                      mInputBuffer->range_length(),
                      mPositionTimeMediaUs / 1E6, mPositionTimeRealUs / 1E6);
@@ -792,11 +801,11 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
     {
         Mutex::Autolock autoLock(mLock);
         mNumFramesPlayed += size_done / mFrameSize;
-        mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
 
         if (mReachedEOS) {
             mPinnedTimeUs = mNumFramesPlayedSysTimeUs;
         } else {
+            mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
             mPinnedTimeUs = -1ll;
         }
     }
@@ -815,10 +824,14 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 int64_t AudioPlayer::getRealTimeUs() {
     Mutex::Autolock autoLock(mLock);
     if (useOffload()) {
+        int64_t playPosition = 0;
         if (mSeeking) {
             return mSeekTimeUs;
         }
-        mPositionTimeRealUs = getOutputPlayPositionUs_l();
+        playPosition = getOutputPlayPositionUs_l();
+        if(!mReachedEOS)
+            mPositionTimeRealUs = playPosition;
+        mPositionTimeMediaUs = mPositionTimeRealUs;
         return mPositionTimeRealUs;
     }
 
@@ -835,15 +848,21 @@ int64_t AudioPlayer::getRealTimeUsLocked() const {
     // compensate using system time.
     int64_t diffUs;
     if (mPinnedTimeUs >= 0ll) {
-        diffUs = mPinnedTimeUs;
+        if(mReachedEOS)
+            diffUs = ALooper::GetNowUs();
+        else
+            diffUs = mPinnedTimeUs;
+
     } else {
         diffUs = ALooper::GetNowUs();
     }
 
     diffUs -= mNumFramesPlayedSysTimeUs;
 
-    ALOGV("getRealTimeUsLocked %" PRId64, result + diffUs);
-    return result + diffUs;
+    if((result + diffUs <= mPositionTimeRealUs) || (!mReachedEOS))
+        return result + diffUs;
+    else
+        return mPositionTimeRealUs;
 }
 
 int64_t AudioPlayer::getOutputPlayPositionUs_l()
@@ -887,17 +906,17 @@ int64_t AudioPlayer::getMediaTimeUs() {
     Mutex::Autolock autoLock(mLock);
 
     if (useOffload()) {
+        int64_t playPosition = 0;
         if (mSeeking) {
             return mSeekTimeUs;
         }
-        if (mReachedEOS) {
-            int64_t durationUs;
-            mSource->getFormat()->findInt64(kKeyDuration, &durationUs);
-            return durationUs;
-        }
-        mPositionTimeRealUs = getOutputPlayPositionUs_l();
-        ALOGV("getMediaTimeUs getOutputPlayPositionUs_l() mPositionTimeRealUs %" PRId64,
-              mPositionTimeRealUs);
+
+        playPosition = getOutputPlayPositionUs_l();
+        if (!mReachedEOS)
+            mPositionTimeRealUs = playPosition;
+        ALOGV("getMediaTimeUs getOutputPlayPositionUs_l() playPosition = %lld,\
+              mPositionTimeRealUs %lld", playPosition, mPositionTimeRealUs);
+        mPositionTimeMediaUs = mPositionTimeRealUs;
         return mPositionTimeRealUs;
     }
 
@@ -920,7 +939,15 @@ bool AudioPlayer::getMediaTimeMapping(
     Mutex::Autolock autoLock(mLock);
 
     if (useOffload()) {
-        mPositionTimeRealUs = getOutputPlayPositionUs_l();
+        int64_t playPosition = 0;
+        if (mSeeking) {
+            playPosition = mSeekTimeUs;
+        } else {
+            playPosition = getOutputPlayPositionUs_l();
+        }
+        if(!mReachedEOS)
+            mPositionTimeRealUs = playPosition;
+        mPositionTimeMediaUs = mPositionTimeRealUs;
         *realtime_us = mPositionTimeRealUs;
         *mediatime_us = mPositionTimeRealUs;
     } else {
@@ -934,9 +961,9 @@ bool AudioPlayer::getMediaTimeMapping(
 status_t AudioPlayer::seekTo(int64_t time_us) {
     Mutex::Autolock autoLock(mLock);
 
-    ALOGV("seekTo( %" PRId64 " )", time_us);
+    ALOGV("seekTo( %lld )", time_us);
 
-    if(useOffload() && !mUseSmallBufs)
+    if(useOffload())
     {
         int64_t playPosition = 0;
         playPosition = getOutputPlayPositionUs_l();

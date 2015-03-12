@@ -48,7 +48,13 @@ struct HTTPBase : public DataSource {
 
     virtual status_t setBandwidthStatCollectFreq(int32_t freqMs);
 
-    virtual void setBandwidthHistorySize(size_t numHistoryItems);
+    static status_t UpdateProxyConfig(
+            const char *host, int32_t port, const char *exclusionList);
+
+    void setUID(uid_t uid);
+    bool getUID(uid_t *uid) const;
+
+    static sp<HTTPBase> Create(uint32_t flags = 0);
 
     static void RegisterSocketUserTag(int sockfd, uid_t uid, uint32_t kTag);
     static void UnRegisterSocketUserTag(int sockfd);
@@ -57,7 +63,7 @@ struct HTTPBase : public DataSource {
     static void UnRegisterSocketUserMark(int sockfd);
 
 protected:
-    virtual void addBandwidthMeasurement(size_t numBytes, int64_t delayUs);
+    void addBandwidthMeasurement(size_t numBytes, int64_t delayUs);
 
 private:
     struct BandwidthEntry {
@@ -71,7 +77,6 @@ private:
     size_t mNumBandwidthHistoryItems;
     int64_t mTotalTransferTimeUs;
     size_t mTotalTransferBytes;
-    size_t mMaxBandwidthHistoryItems;
 
     enum {
         kMinBandwidthCollectFreqMs = 1000,   // 1 second
@@ -81,6 +86,9 @@ private:
     int64_t mPrevBandwidthMeasureTimeUs;
     int32_t mPrevEstimatedBandWidthKbps;
     int32_t mBandWidthCollectFreqMs;
+
+    bool mUIDValid;
+    uid_t mUID;
 
     DISALLOW_EVIL_CONSTRUCTORS(HTTPBase);
 };

@@ -20,7 +20,6 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -94,7 +93,6 @@ static const MtpEventCode kSupportedEventCodes[] = {
     MTP_EVENT_OBJECT_REMOVED,
     MTP_EVENT_STORE_ADDED,
     MTP_EVENT_STORE_REMOVED,
-    MTP_EVENT_DEVICE_PROP_CHANGED,
 };
 
 MtpServer::MtpServer(int fd, MtpDatabase* database, bool ptp,
@@ -126,7 +124,7 @@ void MtpServer::addStorage(MtpStorage* storage) {
 void MtpServer::removeStorage(MtpStorage* storage) {
     Mutex::Autolock autoLock(mMutex);
 
-    for (size_t i = 0; i < mStorages.size(); i++) {
+    for (int i = 0; i < mStorages.size(); i++) {
         if (mStorages[i] == storage) {
             mStorages.removeAt(i);
             sendStoreRemoved(storage->getStorageID());
@@ -138,7 +136,7 @@ void MtpServer::removeStorage(MtpStorage* storage) {
 MtpStorage* MtpServer::getStorage(MtpStorageID id) {
     if (id == 0)
         return mStorages[0];
-    for (size_t i = 0; i < mStorages.size(); i++) {
+    for (int i = 0; i < mStorages.size(); i++) {
         MtpStorage* storage = mStorages[i];
         if (storage->getStorageID() == id)
             return storage;
@@ -263,11 +261,6 @@ void MtpServer::sendStoreRemoved(MtpStorageID id) {
     sendEvent(MTP_EVENT_STORE_REMOVED, id);
 }
 
-void MtpServer::sendDevicePropertyChanged(MtpDeviceProperty property) {
-    ALOGV("sendDevicePropertyChanged %d\n", property);
-    sendEvent(MTP_EVENT_DEVICE_PROP_CHANGED, property);
-}
-
 void MtpServer::sendEvent(MtpEventCode code, uint32_t param1) {
     if (mSessionOpen) {
         mEvent.setEventCode(code);
@@ -324,14 +317,6 @@ bool MtpServer::handleRequest() {
         ALOGE("expected SendObject after SendObjectInfo");
         mSendObjectHandle = kInvalidObjectHandle;
     }
-
-    int containertype = mRequest.getContainerType();
-    if (containertype != MTP_CONTAINER_TYPE_COMMAND) {
-        ALOGE("wrong container type %d", containertype);
-        return false;
-    }
-
-    ALOGV("got command %s (%x)", MtpDebug::getOperationCodeName(operation), operation);
 
     switch (operation) {
         case MTP_OPERATION_GET_DEVICE_INFO:
@@ -423,8 +408,7 @@ bool MtpServer::handleRequest() {
             response = doEndEditObject();
             break;
         default:
-            ALOGE("got unsupported command %s (%x)",
-                    MtpDebug::getOperationCodeName(operation), operation);
+            ALOGE("got unsupported command %s", MtpDebug::getOperationCodeName(operation));
             response = MTP_RESPONSE_OPERATION_NOT_SUPPORTED;
             break;
     }
@@ -802,7 +786,7 @@ MtpResponseCode MtpServer::doGetPartialObject(MtpOperationCode operation) {
     int result = mDatabase->getObjectFilePath(handle, pathBuf, fileLength, format);
     if (result != MTP_RESPONSE_OK)
         return result;
-    if (offset + length > (uint64_t)fileLength)
+    if (offset + length > fileLength)
         length = fileLength - offset;
 
     const char* filePath = (const char *)pathBuf;
@@ -959,28 +943,22 @@ MtpResponseCode MtpServer::doSendObject() {
     fchmod(mfr.fd, mFilePermission);
     umask(mask);
 
-    if (initialData > 0) {
+    if (initialData > 0)
         ret = write(mfr.fd, mData.getData(), initialData);
-    }
 
-    if (ret < 0) {
-        ALOGE("failed to write initial data");
-        result = MTP_RESPONSE_GENERAL_ERROR;
-    } else {
-        if (mSendObjectFileSize - initialData > 0) {
-            mfr.offset = initialData;
-            if (mSendObjectFileSize == 0xFFFFFFFF) {
-                // tell driver to read until it receives a short packet
-                mfr.length = 0xFFFFFFFF;
-            } else {
-                mfr.length = mSendObjectFileSize - initialData;
-            }
-
-            ALOGV("receiving %s\n", (const char *)mSendObjectFilePath);
-            // transfer the file
-            ret = ioctl(mFD, MTP_RECEIVE_FILE, (unsigned long)&mfr);
-            ALOGV("MTP_RECEIVE_FILE returned %d\n", ret);
+    if (mSendObjectFileSize - initialData > 0) {
+        mfr.offset = initialData;
+        if (mSendObjectFileSize == 0xFFFFFFFF) {
+            // tell driver to read until it receives a short packet
+            mfr.length = 0xFFFFFFFF;
+        } else {
+            mfr.length = mSendObjectFileSize - initialData;
         }
+
+        ALOGV("receiving %s\n", (const char *)mSendObjectFilePath);
+        // transfer the file
+        ret = ioctl(mFD, MTP_RECEIVE_FILE, (unsigned long)&mfr);
+        ALOGV("MTP_RECEIVE_FILE returned %d\n", ret);
     }
     close(mfr.fd);
 
@@ -1005,7 +983,7 @@ done:
 
 static void deleteRecursive(const char* path) {
     char pathbuf[PATH_MAX];
-    size_t pathLength = strlen(path);
+    int pathLength = strlen(path);
     if (pathLength >= sizeof(pathbuf) - 1) {
         ALOGE("path too long: %s\n", path);
     }
@@ -1127,13 +1105,12 @@ MtpResponseCode MtpServer::doSendPartialObject() {
 
     // can't start writing past the end of the file
     if (offset > edit->mSize) {
-        ALOGD("writing past end of object, offset: %" PRIu64 ", edit->mSize: %" PRIu64,
-            offset, edit->mSize);
+        ALOGD("writing past end of object, offset: %lld, edit->mSize: %lld", offset, edit->mSize);
         return MTP_RESPONSE_GENERAL_ERROR;
     }
 
     const char* filePath = (const char *)edit->mPath;
-    ALOGV("receiving partial %s %" PRIu64 " %" PRIu32, filePath, offset, length);
+    ALOGV("receiving partial %s %lld %lld\n", filePath, offset, length);
 
     // read the header, and possibly some data
     int ret = mData.read(mFD);
@@ -1147,19 +1124,15 @@ MtpResponseCode MtpServer::doSendPartialObject() {
         length -= initialData;
     }
 
-    if (ret < 0) {
-        ALOGE("failed to write initial data");
-    } else {
-        if (length > 0) {
-            mtp_file_range  mfr;
-            mfr.fd = edit->mFD;
-            mfr.offset = offset;
-            mfr.length = length;
+    if (length > 0) {
+        mtp_file_range  mfr;
+        mfr.fd = edit->mFD;
+        mfr.offset = offset;
+        mfr.length = length;
 
-            // transfer the file
-            ret = ioctl(mFD, MTP_RECEIVE_FILE, (unsigned long)&mfr);
-            ALOGV("MTP_RECEIVE_FILE returned %d", ret);
-        }
+        // transfer the file
+        ret = ioctl(mFD, MTP_RECEIVE_FILE, (unsigned long)&mfr);
+        ALOGV("MTP_RECEIVE_FILE returned %d", ret);
     }
     if (ret < 0) {
         mResponse.setParameter(1, 0);

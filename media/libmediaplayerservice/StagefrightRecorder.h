@@ -25,15 +25,6 @@
 #include <system/audio.h>
 #include <binder/AppOpsManager.h>
 
-#include <media/stagefright/ExtendedStats.h>
-
-#define RECORDER_STATS(func, ...) \
-    do { \
-        if(mRecorderExtendedStats != NULL) { \
-            mRecorderExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
-
 namespace android {
 
 class Camera;
@@ -47,7 +38,6 @@ struct AudioSource;
 class MediaProfiles;
 class IGraphicBufferProducer;
 class SurfaceMediaSource;
-class ALooper;
 
 struct StagefrightRecorder : public MediaRecorderBase {
     StagefrightRecorder();
@@ -68,10 +58,10 @@ struct StagefrightRecorder : public MediaRecorderBase {
     virtual status_t setParameters(const String8& params);
     virtual status_t setListener(const sp<IMediaRecorderClient>& listener);
     virtual status_t setClientName(const String16& clientName);
-    virtual status_t setSourcePause(bool pause);
     virtual status_t prepare();
     virtual status_t start();
     virtual status_t pause();
+    virtual status_t setSourcePause(bool pause);
     virtual status_t stop();
     virtual status_t close();
     virtual status_t reset();
@@ -89,11 +79,11 @@ private:
     String16 mClientName;
     uid_t mClientUid;
     sp<MediaWriter> mWriter;
-    sp<MediaSource> mVideoEncoderOMX;
-    sp<MediaSource> mAudioEncoderOMX;
-    sp<MediaSource> mVideoSourceNode;
     int mOutputFd;
     sp<AudioSource> mAudioSourceNode;
+    sp<MediaSource> mVideoSourceNode;
+    sp<MediaSource> mVideoEncoderOMX;
+    sp<MediaSource> mAudioEncoderOMX;
 
     audio_source_t mAudioSource;
     video_source mVideoSource;
@@ -122,7 +112,6 @@ private:
     int32_t mLatitudex10000;
     int32_t mLongitudex10000;
     int32_t mStartTimeOffsetMs;
-    int32_t mTotalBitRate;
 
     bool mCaptureTimeLapse;
     int64_t mTimeBetweenTimeLapseFrameCaptureUs;
@@ -140,19 +129,25 @@ private:
     // An <IGraphicBufferProducer> pointer
     // will be sent to the client side using which the
     // frame buffers will be queued and dequeued
-    sp<IGraphicBufferProducer> mGraphicBufferProducer;
-    sp<ALooper> mLooper;
+    sp<SurfaceMediaSource> mSurfaceMediaSource;
 
-    sp<RecorderExtendedStats> mRecorderExtendedStats;
-
-    status_t prepareInternal();
-    status_t setupMPEG4orWEBMRecording();
-    void setupMPEG4orWEBMMetaData(sp<MetaData> *meta);
-    status_t setupAMRRecording();
-    status_t setupAACRecording();
-    status_t setupRawAudioRecording();
-    status_t setupRTPRecording();
-    status_t setupMPEG2TSRecording();
+    status_t setupMPEG4Recording(
+        int outputFd,
+        int32_t videoWidth, int32_t videoHeight,
+        int32_t videoBitRate,
+        int32_t *totalBitRate,
+        sp<MediaWriter> *mediaWriter);
+    void setupMPEG4MetaData(int64_t startTimeUs, int32_t totalBitRate,
+        sp<MetaData> *meta);
+    status_t startMPEG4Recording();
+    status_t startAMRRecording();
+    status_t startAACRecording();
+#ifdef QCOM_HARDWARE
+    status_t startWAVERecording();
+#endif
+    status_t startRawAudioRecording();
+    status_t startRTPRecording();
+    status_t startMPEG2TSRecording();
     sp<MediaSource> createAudioSource();
     status_t checkVideoEncoderCapabilities(
             bool *supportsCameraSourceMetaDataMode);
@@ -162,8 +157,14 @@ private:
     // depending on the videosource type
     status_t setupMediaSource(sp<MediaSource> *mediaSource);
     status_t setupCameraSource(sp<CameraSource> *cameraSource);
+    // setup the surfacemediasource for the encoder
+    status_t setupSurfaceMediaSource();
+
     status_t setupAudioEncoder(const sp<MediaWriter>& writer);
-    status_t setupVideoEncoder(sp<MediaSource> cameraSource, sp<MediaSource> *source);
+    status_t setupVideoEncoder(
+            sp<MediaSource> cameraSource,
+            int32_t videoBitRate,
+            sp<MediaSource> *source);
 
     // Encoding parameter handling utilities
     status_t setParameter(const String8 &key, const String8 &value);
@@ -196,18 +197,13 @@ private:
     void clipAudioSampleRate();
     void clipNumberOfAudioChannels();
     void setDefaultProfileIfNecessary();
-    void setDefaultVideoEncoderIfNecessary();
 
 
     StagefrightRecorder(const StagefrightRecorder &);
     StagefrightRecorder &operator=(const StagefrightRecorder &);
-
-    /* extension */
 #ifdef ENABLE_AV_ENHANCEMENTS
-    status_t setupFMA2DPWriter();
-    status_t setupExtendedRecording();
+    status_t startExtendedRecording();
 #endif
-    status_t setupWAVERecording();
 };
 
 }  // namespace android

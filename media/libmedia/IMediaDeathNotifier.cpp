@@ -75,7 +75,7 @@ IMediaDeathNotifier::removeObitRecipient(const wp<IMediaDeathNotifier>& recipien
 }
 
 void
-IMediaDeathNotifier::DeathNotifier::binderDied(const wp<IBinder>& who __unused) {
+IMediaDeathNotifier::DeathNotifier::binderDied(const wp<IBinder>& who) {
     ALOGW("media server died");
 
     // Need to do this with the lock held

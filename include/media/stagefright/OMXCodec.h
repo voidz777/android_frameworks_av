@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,18 +29,9 @@
 
 #include <OMX_Audio.h>
 
-#include <media/stagefright/ExtendedStats.h>
-
-#define PLAYER_STATS(func, ...) \
-    do { \
-        if(mPlayerExtendedStats != NULL) { \
-            mPlayerExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
-
 namespace android {
 
-struct MediaCodecInfo;
+struct MediaCodecList;
 class MemoryDealer;
 struct OMXCodecObserver;
 struct CodecProfileLevel;
@@ -95,6 +89,10 @@ struct OMXCodec : public MediaSource,
     // from MediaBufferObserver
     virtual void signalBufferReturned(MediaBuffer *buffer);
 
+#ifdef STE_HARDWARE
+    static uint32_t OmxToHALFormat(OMX_COLOR_FORMATTYPE omxValue);
+#endif
+
     enum Quirks {
         kNeedsFlushBeforeDisable              = 1,
         kWantsNALFragments                    = 2,
@@ -109,8 +107,16 @@ struct OMXCodec : public MediaSource,
         kSupportsMultipleFramesPerInputBuffer = 1024,
         kRequiresLargerEncoderOutputBuffer    = 2048,
         kOutputBuffersAreUnreadable           = 4096,
+#if defined(OMAP_ENHANCEMENT)
+        kAvoidMemcopyInputRecordingFrames     = 0x20000000,
+#endif
         kRequiresGlobalFlush                  = 0x20000000, // 2^29
+#ifdef QCOM_HARDWARE
         kRequiresWMAProComponent              = 0x40000000, //2^30
+#endif
+#ifdef STE_HARDWARE
+        kRequiresStoreMetaDataBeforeIdle      = 16384,
+#endif
     };
 
     struct CodecNameAndQuirks {
@@ -126,22 +132,14 @@ struct OMXCodec : public MediaSource,
             Vector<CodecNameAndQuirks> *matchingCodecNamesAndQuirks);
 
     static uint32_t getComponentQuirks(
-            const sp<MediaCodecInfo> &list);
+            const MediaCodecList *list, size_t index);
 
     static bool findCodecQuirks(const char *componentName, uint32_t *quirks);
-
-    // If profile/level is set in the meta data, its value in the meta
-    // data will be used; otherwise, the default value will be used.
-    status_t getVideoProfileLevel(const sp<MetaData>& meta,
-            const CodecProfileLevel& defaultProfileLevel,
-            CodecProfileLevel& profileLevel);
 
 protected:
     virtual ~OMXCodec();
 
 private:
-
-    sp<PlayerExtendedStats> mPlayerExtendedStats;
 
     // Make sure mLock is accessible to OMXCodecObserver
     friend class OMXCodecObserver;
@@ -272,8 +270,6 @@ private:
             int32_t numChannels, int32_t sampleRate, int32_t bitRate,
             int32_t aacProfile, bool isADTS);
 
-    status_t setAC3Format(int32_t numChannels, int32_t sampleRate);
-
     void setG711Format(int32_t numChannels);
 
     status_t setVideoPortFormatType(
@@ -281,7 +277,7 @@ private:
             OMX_VIDEO_CODINGTYPE compressionFormat,
             OMX_COLOR_FORMATTYPE colorFormat);
 
-    void setVideoInputFormat(
+    status_t setVideoInputFormat(
             const char *mime, const sp<MetaData>& meta);
 
     status_t setupBitRate(int32_t bitRate);
@@ -294,6 +290,12 @@ private:
 
     status_t isColorFormatSupported(
             OMX_COLOR_FORMATTYPE colorFormat, int portIndex);
+
+    // If profile/level is set in the meta data, its value in the meta
+    // data will be used; otherwise, the default value will be used.
+    status_t getVideoProfileLevel(const sp<MetaData>& meta,
+            const CodecProfileLevel& defaultProfileLevel,
+            CodecProfileLevel& profileLevel);
 
     status_t setVideoOutputFormat(
             const char *mime, const sp<MetaData>& meta);
@@ -324,6 +326,8 @@ private:
     status_t setAPEFormat(const sp<MetaData> &inputFormat);
     status_t setDTSFormat(const sp<MetaData> &inputFormat);
     status_t setFFmpegAudioFormat(const sp<MetaData> &inputFormat);
+
+    status_t getPCMOutputFormat(const sp<MetaData> &meta);
 
     status_t allocateBuffers();
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
@@ -383,28 +387,38 @@ private:
     void dumpPortStatus(OMX_U32 portIndex);
 
     status_t configureCodec(const sp<MetaData> &meta);
+#if defined(OMAP_ENHANCEMENT)
+    void restorePatchedDataPointer(BufferInfo *info);
+#endif
 
     status_t applyRotation();
     status_t waitForBufferFilled_l();
 
     status_t resumeLocked(bool drainInputBuf);
+
     int64_t getDecodingTimeUs();
 
-    status_t parseHEVCCodecSpecificData(
-            const void *data, size_t size,
-            unsigned *profile, unsigned *level);
     status_t parseAVCCodecSpecificData(
             const void *data, size_t size,
             unsigned *profile, unsigned *level);
 
     status_t stopOmxComponent_l();
+    status_t flushBuffersOnError();
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
+    bool hasDisabledPorts();
 
+#ifdef QCOM_HARDWARE
     int32_t mNumBFrames;
+#endif
     bool mInSmoothStreamingMode;
     bool mOutputCropChanged;
+    bool mSignalledReadTryAgain;
+    bool mReturnedRetry;
+    int64_t mLastSeekTimeUs;
+    ReadOptions::SeekMode mLastSeekMode;
 };
 
 struct CodecCapabilities {

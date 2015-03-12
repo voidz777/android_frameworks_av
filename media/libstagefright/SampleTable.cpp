@@ -364,8 +364,9 @@ status_t SampleTable::setCompositionTimeToSampleParams(
         return ERROR_IO;
     }
 
-    if (U32_AT(header) != 0) {
-        // Expected version = 0, flags = 0.
+    if (U32_AT(header) != 0 &&
+        U32_AT(header) != 0x01000000) {
+        // Expected version = 0/1, flags = 0.
         return ERROR_MALFORMED;
     }
 
@@ -474,7 +475,7 @@ status_t SampleTable::getMaxSampleSize(size_t *max_size) {
     return OK;
 }
 
-uint32_t abs_difference(uint32_t time1, uint32_t time2) {
+uint64_t abs_difference(uint64_t time1, uint64_t time2) {
     return time1 > time2 ? time1 - time2 : time2 - time1;
 }
 
@@ -502,7 +503,7 @@ void SampleTable::buildSampleEntriesTable() {
     mSampleTimeEntries = new SampleTimeEntry[mNumSampleSizes];
 
     uint32_t sampleIndex = 0;
-    uint32_t sampleTime = 0;
+    uint64_t sampleTime = 0;
 
     for (uint32_t i = 0; i < mTimeToSampleCount; ++i) {
         uint32_t n = mTimeToSample[2 * i];
@@ -756,9 +757,8 @@ status_t SampleTable::getMetaDataForSample(
         uint32_t sampleIndex,
         off64_t *offset,
         size_t *size,
-        uint32_t *compositionTime,
-        bool *isSyncSample,
-        uint32_t *sampleDuration) {
+        uint64_t *compositionTime,
+        bool *isSyncSample) {
     Mutex::Autolock autoLock(mLock);
 
     status_t err;
@@ -798,10 +798,6 @@ status_t SampleTable::getMetaDataForSample(
 
             mLastSyncSampleIndex = i;
         }
-    }
-
-    if (sampleDuration) {
-        *sampleDuration = mSampleIterator->getSampleDuration();
     }
 
     return OK;

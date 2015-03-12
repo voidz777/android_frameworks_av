@@ -34,14 +34,19 @@
 #include "MediaLogService.h"
 #include "MediaPlayerService.h"
 #include "AudioPolicyService.h"
-#include "SoundTriggerHwService.h"
 #ifdef AUDIO_LISTEN_ENABLED
 #include "ListenService.h"
 #endif
 
 using namespace android;
 
-int main(int argc __unused, char** argv)
+#ifdef SECTVOUT
+namespace android { namespace SecTVOutService {
+void instantiate(void);
+} }
+#endif
+
+int main(int argc, char** argv)
 {
     signal(SIGPIPE, SIG_IGN);
     char value[PROPERTY_VALUE_MAX];
@@ -128,6 +133,9 @@ int main(int argc __unused, char** argv)
         sp<ProcessState> proc(ProcessState::self());
         sp<IServiceManager> sm = defaultServiceManager();
         ALOGI("ServiceManager: %p", sm.get());
+#ifdef SECTVOUT
+        SecTVOutService::instantiate();
+#endif
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
         CameraService::instantiate();
@@ -136,7 +144,6 @@ int main(int argc __unused, char** argv)
         ListenService::instantiate();
 #endif
         AudioPolicyService::instantiate();
-        SoundTriggerHwService::instantiate();
         registerExtensions();
         ProcessState::self()->startThreadPool();
         IPCThreadState::self()->joinThreadPool();

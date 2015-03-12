@@ -30,18 +30,13 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/threads.h>
 #include <drm/DrmManagerClient.h>
-#include <media/stagefright/ExtendedStats.h>
 
-#define PLAYER_STATS(func, ...) \
-    do { \
-        if(mPlayerExtendedStats != NULL) { \
-            mPlayerExtendedStats->func(__VA_ARGS__);} \
-    } \
-    while(0)
+#include "ExtendedUtils.h"
 
 namespace android {
 
 struct AudioPlayer;
+struct ClockEstimator;
 struct DataSource;
 struct MediaBuffer;
 struct MediaExtractor;
@@ -73,7 +68,6 @@ struct AwesomePlayer {
     void setUID(uid_t uid);
 
     status_t setDataSource(
-            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -113,8 +107,6 @@ struct AwesomePlayer {
     void postAudioEOS(int64_t delayUs = 0ll);
     void postAudioSeekComplete();
     void postAudioTearDown();
-    void printFileName(int fd);
-
     status_t dump(int fd, const Vector<String16> &args) const;
 
     status_t suspend();
@@ -123,8 +115,6 @@ struct AwesomePlayer {
 private:
     friend struct AwesomeEvent;
     friend struct PreviewPlayer;
-
-    sp<PlayerExtendedStats> mPlayerExtendedStats;
 
     enum {
         PLAYING             = 0x01,
@@ -157,6 +147,8 @@ private:
         TEXTPLAYER_INITIALIZED  = 0x20000,
 
         SLOW_DECODER_HACK   = 0x40000,
+
+        NO_AVSYNC   = 0x80000,
     };
 
     mutable Mutex mLock;
@@ -177,7 +169,6 @@ private:
     SystemTimeSource mSystemTimeSource;
     TimeSource *mTimeSource;
 
-    sp<IMediaHTTPService> mHTTPService;
     String8 mUri;
     KeyedVector<String8, String8> mUriHeaders;
 
@@ -190,7 +181,6 @@ private:
     bool mVideoRendererIsPreview;
     int32_t mMediaRenderingStartGeneration;
     int32_t mStartGeneration;
-    ssize_t mActiveVideoTrackIndex;
 
     ssize_t mActiveAudioTrackIndex;
     sp<MediaSource> mAudioTrack;
@@ -210,7 +200,6 @@ private:
 
     int64_t mTimeSourceDeltaUs;
     int64_t mVideoTimeUs;
-    int64_t mVideoFrameDeltaUs;
 
     enum SeekType {
         NO_SEEK,
@@ -262,6 +251,7 @@ private:
 
     MediaBuffer *mVideoBuffer;
 
+    sp<ClockEstimator> mClockEstimator;
     sp<HTTPBase> mConnectingDataSource;
     sp<NuCachedSource2> mCachedSource;
 
@@ -270,13 +260,11 @@ private:
 
     int64_t mLastVideoTimeUs;
     TimedTextDriver *mTextDriver;
-    ssize_t mActiveTextTrackIndex;
 
     sp<WVMExtractor> mWVMExtractor;
     sp<MediaExtractor> mExtractor;
 
     status_t setDataSource_l(
-            const sp<IMediaHTTPService> &httpService,
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
 
@@ -323,6 +311,7 @@ private:
 
     bool getBitrate(int64_t *bitrate);
 
+    int64_t estimateRealTimeUs(TimeSource *ts, int64_t systemTimeUs);
     void finishSeekIfNecessary(int64_t videoTimeUs);
     void ensureCacheIsFetching_l();
 
@@ -353,6 +342,7 @@ private:
     void printStats();
     int64_t getTimeOfDayUs();
     bool mStatistics;
+    int64_t mLateAVSyncMargin;
 
     struct TrackStat {
         String8 mMIME;
@@ -401,7 +391,7 @@ private:
     bool    mAudioTearDown;
     bool    mAudioTearDownWasPlaying;
     int64_t mAudioTearDownPosition;
-    bool mConsumeRights;
+
     status_t setVideoScalingMode(int32_t mode);
     status_t setVideoScalingMode_l(int32_t mode);
     status_t getTrackInfo(Parcel* reply) const;
@@ -413,16 +403,19 @@ private:
     status_t selectTrack(size_t trackIndex, bool select);
 
     size_t countTracks() const;
+    bool isWidevineContent() const;
+
 #ifdef QCOM_DIRECTTRACK
     bool inSupportedTunnelFormats(const char * mime);
     //Flag to check if tunnel mode audio is enabled
     bool mIsTunnelAudio;
 #endif
-
-    bool isWidevineContent() const;
-
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
+    bool mReadRetry;
+    bool mCustomAVSync;
+
+    sp<VSyncLocker> mVSyncLocker;
 };
 
 }  // namespace android

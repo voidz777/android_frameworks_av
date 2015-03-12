@@ -7,14 +7,14 @@ LOCAL_SRC_FILES:= \
 	EffectLoudnessEnhancer.cpp \
 	dsp/core/dynamic_range_compression.cpp
 
-LOCAL_CFLAGS+= -O2 -fvisibility=hidden
+LOCAL_CFLAGS+= -O2 -fvisibility=hidden -fno-strict-aliasing
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	liblog \
 	libstlport
 
-LOCAL_MODULE_RELATIVE_PATH := soundfx
+LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/soundfx
 LOCAL_MODULE:= libldnhncr
 
 LOCAL_C_INCLUDES := \

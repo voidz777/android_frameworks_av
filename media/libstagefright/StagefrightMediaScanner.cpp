@@ -24,7 +24,6 @@
 
 #include <media/stagefright/StagefrightMediaScanner.h>
 
-#include <media/IMediaHTTPService.h>
 #include <media/mediametadataretriever.h>
 #include <private/media/VideoFrame.h>
 
@@ -47,7 +46,7 @@ static bool FileHasAcceptableExtension(const char *extension) {
         ".mov", ".ra", ".rm", ".rmvb", ".ac3", ".ape", ".dts",
         ".mp1", ".mp2", ".f4v", "hlv", "nrg", "m2v", ".swf",
         ".avi", ".mpg", ".mpeg", ".awb", ".vc1", ".vob", ".divx",
-        ".mpga", ".mov", ".qcp", ".ec3"
+        ".mpga", ".mov", ".qcp", ".ec3", ".ts"
     };
     static const size_t kNumValidExtensions =
         sizeof(kValidExtensions) / sizeof(kValidExtensions[0]);
@@ -122,7 +121,7 @@ MediaScanResult StagefrightMediaScanner::processFile(
 }
 
 MediaScanResult StagefrightMediaScanner::processFileInternal(
-        const char *path, const char * /* mimeType */,
+        const char *path, const char *mimeType,
         MediaScannerClient &client) {
     const char *extension = strrchr(path, '.');
 
@@ -152,7 +151,7 @@ MediaScanResult StagefrightMediaScanner::processFileInternal(
     status_t status;
     if (fd < 0) {
         // couldn't open it locally, maybe the media server can?
-        status = mRetriever->setDataSource(NULL /* httpService */, path);
+        status = mRetriever->setDataSource(path);
     } else {
         status = mRetriever->setDataSource(fd, 0, 0x7ffffffffffffffL);
         close(fd);
@@ -207,7 +206,7 @@ MediaScanResult StagefrightMediaScanner::processFileInternal(
     return MEDIA_SCAN_RESULT_OK;
 }
 
-MediaAlbumArt *StagefrightMediaScanner::extractAlbumArt(int fd) {
+char *StagefrightMediaScanner::extractAlbumArt(int fd) {
     ALOGV("extractAlbumArt %d", fd);
 
     off64_t size = lseek64(fd, 0, SEEK_END);
@@ -219,9 +218,17 @@ MediaAlbumArt *StagefrightMediaScanner::extractAlbumArt(int fd) {
     sp<MediaMetadataRetriever> mRetriever(new MediaMetadataRetriever);
     if (mRetriever->setDataSource(fd, 0, size) == OK) {
         sp<IMemory> mem = mRetriever->extractAlbumArt();
+
         if (mem != NULL) {
             MediaAlbumArt *art = static_cast<MediaAlbumArt *>(mem->pointer());
-            return art->clone();
+
+            char *data = (char *)malloc(art->mSize + 4);
+            if (data != NULL) {
+                *(int32_t *)data = art->mSize;
+                memcpy(&data[4], &art[1], art->mSize);
+            }
+
+            return data;
         }
     }
 

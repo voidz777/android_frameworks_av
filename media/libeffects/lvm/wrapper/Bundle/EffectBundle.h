@@ -73,8 +73,6 @@ struct BundledEffectContext{
     bool                            bBassTempDisabled;        /* Flag for Bass to be re-enabled */
     bool                            bVirtualizerEnabled;      /* Flag for Virtualizer */
     bool                            bVirtualizerTempDisabled; /* Flag for effect to be re-enabled */
-    audio_devices_t                 nOutputDevice;            /* Output device for the effect */
-    audio_devices_t                 nVirtualizerForcedDevice; /* Forced device virtualization mode*/
     int                             NumberEffectsCalled;      /* Effects called so far */
     uint32_t                        EffectsBitMap;            /* Effects enable bit mask */
     bool                            firstVolume;              /* No smoothing on first Vol change */

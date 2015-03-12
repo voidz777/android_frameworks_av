@@ -1,10 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-ifeq ($(TARGET_DEVICE), manta)
-    LOCAL_CFLAGS += -DSURFACE_IS_BGR32
-endif
-
 LOCAL_SRC_FILES:=                     \
         GraphicBufferSource.cpp       \
         OMX.cpp                       \
@@ -14,7 +10,6 @@ LOCAL_SRC_FILES:=                     \
         SoftOMXComponent.cpp          \
         SoftOMXPlugin.cpp             \
         SoftVideoDecoderOMXComponent.cpp \
-        SoftVideoEncoderOMXComponent.cpp \
 
 LOCAL_C_INCLUDES += \
         $(TOP)/frameworks/av/media/libstagefright \
@@ -23,7 +18,6 @@ LOCAL_C_INCLUDES += \
 
 LOCAL_SHARED_LIBRARIES :=               \
         libbinder                       \
-        libhardware                     \
         libmedia                        \
         libutils                        \
         liblog                          \
@@ -32,6 +26,10 @@ LOCAL_SHARED_LIBRARIES :=               \
         libcutils                       \
         libstagefright_foundation       \
         libdl
+
+ifeq ($(BOARD_USES_PROPRIETARY_OMX),SAMSUNG)
+LOCAL_CFLAGS     += -DSAMSUNG_OMX
+endif
 
 LOCAL_MODULE:= libstagefright_omx
 
